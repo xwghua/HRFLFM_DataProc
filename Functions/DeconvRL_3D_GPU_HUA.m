@@ -2,44 +2,31 @@ function Xguess = DeconvRL_3D_GPU_HUA( OTF, maxIter, FLFimg, mode, varargin)
 
 if mode == "hybrid"
     projfunc = @BackForewardProj_hybrid;
-    elmtSize = round((varargin{1}.Centers(2,2)-varargin{1}.Centers(1,2))/2);
-    [X,Y] = meshgrid(1:1:(elmtSize*2+1),1:1:(elmtSize*2+1));
-    extravar.circmask = gpuArray(single(sqrt((X-elmtSize).^2 + (Y-elmtSize).^2)<=250));
+    halfelmtSize = round((varargin{1}.Centers(2,2)-varargin{1}.Centers(1,2))/2);
+    [X,Y] = meshgrid(1:1:(halfelmtSize*2+1),1:1:(halfelmtSize*2+1));
+    extravar.circmask = gpuArray(single(sqrt((X-halfelmtSize).^2 + (Y-halfelmtSize).^2)<=250));
     extravar.resizeParam = ceil(max(abs(varargin{1}.dCenterPos(:))));
     extravar.resizeFactor = 1;
-    extravar.elmtSize = elmtSize;
+    extravar.elmtSize = halfelmtSize;
     extravar.Centers = varargin{1}.Centers;
     extravar.dCenterPos = varargin{1}.dCenterPos;
     extravar.INVOTF = varargin{1}.INVOTF;
 elseif mode == "shifted"
     projfunc = @BackForewardProj_hybrid;
-    elmtSize = round((varargin{1}.Centers(2,2)-varargin{1}.Centers(1,2))/2);
-    [X,Y] = meshgrid(1:1:(elmtSize*2+1),1:1:(elmtSize*2+1));
-    extravar.circmask = gpuArray(single(sqrt((X-elmtSize).^2 + (Y-elmtSize).^2)<=elmtSize));
+    halfelmtSize = round((varargin{1}.Centers(2,2)-varargin{1}.Centers(1,2))/2);
+    [X,Y] = meshgrid(1:1:(halfelmtSize*2+1),1:1:(halfelmtSize*2+1));
+    extravar.circmask = gpuArray(single(sqrt((X-halfelmtSize).^2 + (Y-halfelmtSize).^2)<=halfelmtSize));
     extravar.resizeParam = ceil(max(abs(varargin{1}.dCenterPos(:))));
     extravar.resizeFactor = 1;
-    extravar.elmtSize = elmtSize;
+    extravar.elmtSize = halfelmtSize;
     extravar.Centers = varargin{1}.Centers;
     extravar.dCenterPos = varargin{1}.dCenterPos;
     extravar.INVOTF = varargin{1}.INVOTF;
-    FLFimg3d0 = cat(3,FLFimg(extravar.Centers(1,1)-elmtSize:extravar.Centers(1,1)+elmtSize,...
-                             extravar.Centers(1,2)-elmtSize:extravar.Centers(1,2)+elmtSize),...
-                      FLFimg(extravar.Centers(2,1)-elmtSize:extravar.Centers(2,1)+elmtSize,...
-                             extravar.Centers(2,2)-elmtSize:extravar.Centers(2,2)+elmtSize),...
-                      FLFimg(extravar.Centers(3,1)-elmtSize:extravar.Centers(3,1)+elmtSize,...
-                             extravar.Centers(3,2)-elmtSize:extravar.Centers(3,2)+elmtSize));
-    FLFimg3d0bw = single(FLFimg3d0>0.3*max(FLFimg3d0(:)));
-    imcenters = round([squeeze(mean(FLFimg3d0bw.*Y,[1,2])./mean(FLFimg3d0bw,[1,2])),...
-                       squeeze(mean(FLFimg3d0bw.*X,[1,2])./mean(FLFimg3d0bw,[1,2]))]);
-    FLFimg3d0(:,:,1) = circshift(FLFimg3d0(:,:,1),round(elmtSize)-imcenters(1,:));
-    FLFimg3d0(:,:,2) = circshift(FLFimg3d0(:,:,2),round(elmtSize)-imcenters(2,:));
-    FLFimg3d0(:,:,3) = circshift(FLFimg3d0(:,:,3),round(elmtSize)-imcenters(3,:));
-    FLFimg(extravar.Centers(1,1)-elmtSize:extravar.Centers(1,1)+elmtSize,...
-           extravar.Centers(1,2)-elmtSize:extravar.Centers(1,2)+elmtSize) = FLFimg3d0(:,:,1);
-    FLFimg(extravar.Centers(2,1)-elmtSize:extravar.Centers(2,1)+elmtSize,...
-           extravar.Centers(2,2)-elmtSize:extravar.Centers(2,2)+elmtSize) = FLFimg3d0(:,:,2);
-    FLFimg(extravar.Centers(3,1)-elmtSize:extravar.Centers(3,1)+elmtSize,...
-           extravar.Centers(3,2)-elmtSize:extravar.Centers(3,2)+elmtSize) = FLFimg3d0(:,:,3);
+    try
+        FLFimg = shiftRaw(FLFimg,extravar.Centers,halfelmtSize*2,extravar.dCenterPos,10);
+    catch
+        warning('No rawshift appliable! Please check the raw data!')
+    end
 elseif mode == "wave"
     projfunc = @BackForewardProj_waveopt;
     extravar = varargin{1}.INVOTF;
