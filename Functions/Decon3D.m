@@ -55,7 +55,7 @@ for ii = 1:1:length(FLFMfiles)
     %% Save reconstructed images
     Xguess_norm_re = imresize( Xguess_norm , 275/123);
     Xguess_norm_re_proj = sum(Xguess_norm_re,3);
-    rowc = round(size(Xguess_norm_re_proj,1)/2)+CutShift-250;
+    rowc = round(size(Xguess_norm_re_proj,1)/2)+CutShift;
     colc = round(size(Xguess_norm_re_proj,2)/2)+CutShift;
     Xguess_norm_re = Xguess_norm_re(rowc-ceil(CropH/2)+1:rowc+floor(CropH/2),...
                                     colc-ceil(CropW/2)+1:colc+floor(CropW/2),:);
