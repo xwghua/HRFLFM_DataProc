@@ -1,8 +1,11 @@
-function [PSFpath,FLFMpath] = Decon3D(PSFpath,FLFMpath,Reconpath,Iter,Centers,dCenterPos,CutShift,CropH,CropW,Mode)
+function [PSFpath,FLFMpath] = Decon3D(PSFpath,FLFMpath,Reconpath,Iter,Centers,...
+    dCenterPos,...%CutShift,CropH,CropW,
+    Mode,isreplace,varargin)
 %DECON3D Summary of this function goes here
 %   Detailed explanation goes here
 load(PSFpath,'FLFPSF');
 FLFPSF = single(FLFPSF);
+FLFPSF = FLFPSF./max(FLFPSF,[],[1,2]);
 Depth_Size = size(FLFPSF,3);
 disp(['PSF [',PSFpath,'] read!',' Total layers: ',num2str(Depth_Size)])
 %% Generate OTF
@@ -41,38 +44,69 @@ PSFfolder = char(h(end));
 disp(["Reconstructions will be saved in";string([Reconpath,'\',PSFfolder(1:end-4),'-',FLFMfolder])])
 mkdir([Reconpath,'\',PSFfolder(1:end-4),'-',FLFMfolder])
 %% ======================= 3D Reconstruction Start ==================================
+first2recon = true;
 for ii = 1:1:length(FLFMfiles)
-    imcut = gpuArray(single(imread([FLFMpath,'\',FLFMfiles(ii).name])));
-    imcut = imcut/max(imcut(:))*60000;
-    disp(['FLFM IMG [',FLFMfiles(ii).name,'] read!'])
-    Xguess  = DeconvRL_3D_GPU_HUA( OTF, Iter, imcut, Mode ,extravar);
-    Xguess = gather(Xguess);
-    Xguess_norm = Xguess/max(Xguess(:))*65535;
-%     Xguess  = DeconvRL_3D_GPU_HUA( OTF, Iter imcut, "fast" ,extravar);
-%     Xguess = gather(Xguess);
-%     Xguess_norm2 = Xguess/max(Xguess(:))*65535;
-%     figure(1),imshowpair(Xguess_norm(:,:,80),Xguess_norm2(:,:,51),'montage')
-    %% Save reconstructed images
-    Xguess_norm_re = imresize( Xguess_norm , 275/123);
-    Xguess_norm_re_proj = sum(Xguess_norm_re,3);
-    rowc = round(size(Xguess_norm_re_proj,1)/2)+CutShift;
-    colc = round(size(Xguess_norm_re_proj,2)/2)+CutShift;
-    Xguess_norm_re = Xguess_norm_re(rowc-ceil(CropH/2)+1:rowc+floor(CropH/2),...
-                                    colc-ceil(CropW/2)+1:colc+floor(CropW/2),:);
-    t = Tiff([Reconpath,'\',PSFfolder(1:end-4),'-',FLFMfolder,'\',...
-        FLFMfiles(ii).name(1:end-4),'iter',num2str(Iter),'.tif'],'w');
-    tagstruct.ImageLength = size(Xguess_norm_re,1);
-    tagstruct.ImageWidth = size(Xguess_norm_re,2);
-    tagstruct.Photometric = Tiff.Photometric.MinIsBlack;
-    tagstruct.BitsPerSample = 16;
-    tagstruct.SamplesPerPixel = 1;
-    tagstruct.Compression = Tiff.Compression.None;
-    tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
-    for depth_index  = 1:Depth_Size
-        setTag(t,tagstruct);
-        write(t,uint16(Xguess_norm_re(:,:,depth_index)));
-        writeDirectory(t);
+    reconfilename = [Reconpath,'\',PSFfolder(1:end-4),'-',FLFMfolder,'\',...
+        FLFMfiles(ii).name(1:end-4),'iter',num2str(Iter),'.tif'];
+    procbar = round(ii/length(FLFMfiles)*100,2);
+    if ~exist(reconfilename,"file") || isreplace
+        imcut = gpuArray(single(imread([FLFMpath,'\',FLFMfiles(ii).name])));
+        imcut = imcut/max(imcut(:))*60000;
+        disp(['FLFM IMG [',FLFMfiles(ii).name,'] read!'])
+        if nargin>8
+            varargin{1}.Text = ['(',num2str(procbar),'%) ',char(Mode),...
+                ': Reconstructing FLFM IMG [',FLFMfiles(ii).name,']'];
+            varargin{1}.BackgroundColor = [0.85,0.41,0.41];
+            drawnow;
+        end
+        Xguess  = DeconvRL_3D_GPU_HUA( OTF, Iter, imcut, Mode ,extravar);
+        Xguess = gather(Xguess);
+        Xguess_norm = Xguess/max(Xguess(:))*65535;
+        Xguess_norm_re = imresize( Xguess_norm , 275/123);
+        Xguess_norm_re_proj = sum(Xguess_norm_re,3);
+        %% Save reconstructed images
+        if first2recon
+            coord = roiSelect(imcut,Xguess_norm_re_proj);
+            first2recon = ~first2recon;
+        end
+        rowc = coord(1);
+        colc = coord(2);
+        Xsize = coord(3);        
+        if nargin>8
+            Xguess_norm_re = Xguess_norm_re(rowc-ceil(Xsize/2)+1:rowc+floor(Xsize/2),...
+                colc-ceil(Xsize/2)+1:colc+floor(Xsize/2),:);
+            Xguess_norm_re_proj = sum(Xguess_norm_re,3);
+            imshowpair(imcut/max(imcut(:)),Xguess_norm_re_proj/max(Xguess_norm_re_proj(:)),...
+                'montage','parent',varargin{2});
+            drawnow
+            % ==============================
+            varargin{1}.Text = ['(',num2str(procbar),'%) ',char(Mode),...
+                ': Saving FLFM IMG [',FLFMfiles(ii).name,']'];
+            varargin{1}.BackgroundColor = [0.41,0.41,0.85];
+            drawnow;
+        end
+        t = Tiff(reconfilename,'w');
+        tagstruct.ImageLength = size(Xguess_norm_re,1);
+        tagstruct.ImageWidth = size(Xguess_norm_re,2);
+        tagstruct.Photometric = Tiff.Photometric.MinIsBlack;
+        tagstruct.BitsPerSample = 16;
+        tagstruct.SamplesPerPixel = 1;
+        tagstruct.Compression = Tiff.Compression.None;
+        tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
+        for depth_index  = 1:Depth_Size
+            setTag(t,tagstruct);
+            write(t,uint16(Xguess_norm_re(:,:,depth_index)));
+            writeDirectory(t);
+        end
+        close(t);
+    else
+%         disp(['FLFM IMG [',FLFMfiles(ii).name,'] exists! No replacement!'])
+        if nargin>8
+            varargin{1}.Text = ['(',num2str(procbar),'%) ','FLFM IMG [',...
+                FLFMfiles(ii).name,'] exists! No replacement!'];
+            varargin{1}.BackgroundColor = [0.85,0.65,0];
+            drawnow;
+        end
     end
-    close(t);
 end
 end
